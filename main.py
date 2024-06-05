@@ -1,7 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import networkx as nx
 from heapq import heappop, heappush
-import itertools
+from matplotlib.animation import FuncAnimation
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
 
 # Definição do galpão
 warehouse = [
@@ -14,39 +17,76 @@ warehouse = [
     ['A4', 'L', 'B4', 'L', 'C4', 'L', 'D4', 'L', 'E4', 'L', 'F4', 'L', 'G4']
 ]
 
+
 # Função para visualizar o galpão
-def plot_warehouse(warehouse, paths=None):
+def plot_warehouse(warehouse, robot_path=None, goal_pos=None):
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.set_xticks(np.arange(len(warehouse[0])) + 0.5, minor=True)
     ax.set_yticks(np.arange(len(warehouse)) + 0.5, minor=True)
     ax.grid(which="minor", color="black", linestyle='-', linewidth=2)
     ax.tick_params(which="minor", size=0)
 
-    # Ajuste do grid e elementos para evitar cortes
     ax.set_xlim(-0.5, len(warehouse[0]) - 0.5)
     ax.set_ylim(-0.5, len(warehouse) - 0.5)
 
-    # Plotando os elementos do galpão
     for y in range(len(warehouse)):
         for x in range(len(warehouse[0])):
             element = warehouse[y][x]
             if element == 'L':
                 ax.text(x, y, element, ha='center', va='center', fontsize=12)
             elif element == 'B':
-                ax.add_patch(plt.Rectangle((x - 0.5, y - 0.5), 1, 1, fill=True, color="black"))
+                ax.add_patch(
+                    plt.Rectangle((x - 0.5, y - 0.5),
+                                  1,
+                                  1,
+                                  fill=True,
+                                  color="black"))
             elif element == 'E':
-                ax.add_patch(plt.Rectangle((x - 0.5, y - 0.5), 1, 1, fill=True, color="green"))
+                ax.add_patch(
+                    plt.Rectangle((x - 0.5, y - 0.5),
+                                  1,
+                                  1,
+                                  fill=True,
+                                  color="green"))
+            elif (x, y) == goal_pos:
+                package_img = mpimg.imread("package.png")
+                ax.imshow(package_img, extent=[x - 0.5, x + 0.5, y - 0.5, y + 0.5])
             else:
-                ax.text(x, y, element, ha='center', va='center', fontsize=12, color='red')
+                ax.text(x,
+                        y,
+                        element,
+                        ha='center',
+                        va='center',
+                        fontsize=12,
+                        color='red')
 
-    # Plotando o caminho, se fornecido
-    if paths:
-        colors = ['blue', 'red', 'green']
-        for idx, path in enumerate(paths):
-            color = colors[idx % len(colors)]
-            for i in range(len(path) - 1):
-                (x1, y1), (x2, y2) = path[i], path[i + 1]
-                ax.arrow(x1, y1, x2 - x1, y2 - y1, head_width=0.2, head_length=0.2, fc=color, ec=color)
+    if robot_path:
+        robo_img = mpimg.imread("robo.png")
+        img_plot = ax.imshow(robo_img,
+                             extent=[
+                                 robot_path[0][0] - 0.5,
+                                 robot_path[0][0] + 0.5,
+                                 robot_path[0][1] - 0.5, robot_path[0][1] + 0.5
+                             ])
+
+        def update(frame):
+            x, y = robot_path[frame]
+            img_plot.set_extent([x - 0.5, x + 0.5, y - 0.5, y + 0.5])
+            return img_plot,
+
+        anim = FuncAnimation(fig,
+                             update,
+                             frames=len(robot_path),
+                             interval=300,
+                             blit=True,
+                             repeat=False)
+
+        # Adiciona uma seta ao caminho percorrido
+        for i in range(1, len(robot_path)):
+            ax.annotate("",
+                        xy=(robot_path[i][0], robot_path[i][1]),
+                        xytext=(robot_path[i - 1][0], robot_path[i - 1][1]),
+                        arrowprops=dict(arrowstyle="->", color="blue", lw=1.5))
 
     plt.gca().invert_yaxis()
     plt.show()
@@ -57,34 +97,113 @@ def get_neighbors(pos, warehouse):
     x, y = pos
     for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
         nx, ny = x + dx, y + dy
-        if 0 <= nx < len(warehouse[0]) and 0 <= ny < len(warehouse) and warehouse[ny][nx] != 'B':
+        if 0 <= nx < len(warehouse[0]) and 0 <= ny < len(warehouse) and warehouse[ny][nx] not in ['B', 'A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2', 'A3', 'B3', 'C3', 'D3', 'E3', 'F3', 'G3', 'A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4']:
             neighbors.append((nx, ny))
     return neighbors
+
 
 # Função de heurística (distância de Manhattan)
 def heuristic(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
-# Função para encontrar a posição adjacente válida mais próxima
-def find_adjacent_goal(warehouse, goal):
-    x, y = goal
-    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-        nx, ny = x + dx, y + dy
-        if 0 <= nx < len(warehouse[0]) and 0 <= ny < len(warehouse) and warehouse[ny][nx] == 'L':
-            return (nx, ny)
-    return goal  # Se não houver posição adjacente válida, retorna o próprio objetivo
 
-# Implementação do algoritmo A*
+# Função para encontrar a posição adjacente válida mais próxima
+def find_adjacent_goal(warehouse, goal, entry):
+    x, y = goal
+    possible_targets = [(x-1, y), (x, y-1), (x, y+1), (x+1, y)]
+    min_distance = float('inf')
+    closest_target = None
+
+    for target in possible_targets:
+        if 0 <= target[0] < len(warehouse[0]) and 0 <= target[1] < len(warehouse):
+            distance = abs(target[0] - entry[0]) + abs(target[1] - entry[1])
+            if distance < min_distance:
+                min_distance = distance
+                closest_target = target
+
+    if closest_target and warehouse[closest_target[1]][closest_target[0]] == 'L':
+        return closest_target
+    else:
+        return goal  # Se não houver posição adjacente válida, retorna o próprio objetivo
+        
+# Função para encontrar a posição da entrada
+def find_entry(warehouse):
+    for y in range(len(warehouse)):
+        for x in range(len(warehouse[0])):
+            if warehouse[y][x] == 'E':
+                return (x, y)
+    return None
+
+# Função para obter a posição de um objetivo dado seu rótulo
+def find_goal_position(warehouse, goal_label):
+    for y in range(len(warehouse)):
+        for x in range(len(warehouse[0])):
+            if warehouse[y][x] == goal_label:
+                return (x, y)
+    return None
+
+# Função para plotar o grafo do caminho percorrido e salvar como imagem
+def plot_graph(G, path, filename):
+    pos = {node: (node[1], -node[0]) for node in G.nodes()}  # Inverte as coordenadas x e y
+    fig, ax = plt.subplots(figsize=(8, 12))  # Define a figura com altura maior que a largura
+    nx.draw(G,
+            pos,
+            with_labels=True,
+            node_size=500,
+            node_color='lightblue',
+            font_size=10,
+            font_weight='bold',
+            ax=ax)
+    path_edges = list(zip(path, path[1:]))
+    nx.draw_networkx_edges(G,
+                           pos,
+                           edgelist=path_edges,
+                           edge_color='r',
+                           width=2,
+                           ax=ax)
+    ax.invert_yaxis()  # Inverte o eixo y para desenhar de cima para baixo
+    plt.savefig(filename)
+    plt.close(fig)
+
+# Função para plotar as listas Open e Closed como uma tabela e salvar como imagem
+def plot_lists(open_list, closed_list, filename):
+    fig, ax = plt.subplots(figsize=(12, 4))
+    ax.axis('tight')
+    ax.axis('off')
+    table_data = []
+    for open_item, closed_item in zip(open_list, closed_list):
+        table_data.append([str(open_item), str(closed_item)])
+
+    # Criar a tabela
+    table = ax.table(cellText=table_data, colLabels=['Open List', 'Closed List'], loc='center', cellLoc='center', bbox=[0, 0, 1, 1])
+
+    # Definir o tamanho da fonte manualmente
+    for key, cell in table.get_celld().items():
+        cell.set_fontsize(36)  # Increase the font size to 30
+
+    plt.savefig(filename, dpi=300, bbox_inches='tight', pad_inches=0)  # Remove padding
+    plt.close(fig)
+
+# Agora, vamos modificar a função a_star_search para coletar os dados das listas Open e Closed
 def a_star_search(warehouse, start, goal):
-    goal = find_adjacent_goal(warehouse, goal)
+    goal = find_adjacent_goal(warehouse, goal, start)
     start, goal = tuple(start), tuple(goal)
     open_list = []
     heappush(open_list, (0, start))
     came_from = {start: None}
     cost_so_far = {start: 0}
 
+    closed_list = set()  # Conjunto para armazenar os nós fechados
+
+    open_list_data = [open_list.copy()]
+    closed_list_data = [closed_list.copy()]
+
+    # Grafo para visualizar o caminho percorrido
+    G = nx.Graph()
+
     while open_list:
         _, current = heappop(open_list)
+        closed_list.add(current)  # Adiciona o nó atual à lista fechada
 
         if current == goal:
             break
@@ -96,6 +215,10 @@ def a_star_search(warehouse, start, goal):
                 priority = new_cost + heuristic(goal, neighbor)
                 heappush(open_list, (priority, neighbor))
                 came_from[neighbor] = current
+                G.add_edge(current, neighbor)  # Adiciona aresta ao grafo
+
+        open_list_data.append(open_list.copy())
+        closed_list_data.append(closed_list.copy())
 
     path = []
     current = goal
@@ -104,74 +227,20 @@ def a_star_search(warehouse, start, goal):
         current = came_from[current]
     path.reverse()
 
-    return path
+    # Agora, plotamos a tabela com os dados das listas Open e Closed
+    plot_lists(open_list_data, closed_list_data, "listas.jpg")
 
-# Função para encontrar a posição da entrada
-def find_entry(warehouse):
-    for y in range(len(warehouse)):
-        for x in range(len(warehouse[0])):
-            if warehouse[y][x] == 'E':
-                return (x, y)
-    return None
+    return path, G
 
-# Função para calcular o caminho mínimo entre múltiplos destinos
-def find_best_route(warehouse, start, goals):
-    all_goals = [start] + goals
-    best_path = []
-    min_distance = float('inf')
-    best_perm = None
+# Chamada da função a_star_search
+goal_label = input(
+    "Digite a casa para a qual deseja ir (por exemplo, A1, B2, etc.): ").upper()
+goal_pos = find_goal_position(warehouse, goal_label)
 
-    for perm in itertools.permutations(goals):
-        current_path = []
-        total_distance = 0
-        current_position = start
-
-        for goal in perm:
-            path_segment = a_star_search(warehouse, current_position, goal)
-            total_distance += len(path_segment) - 1
-            current_path += path_segment[:-1] if current_path else path_segment
-            current_position = goal
-
-        if total_distance < min_distance:
-            min_distance = total_distance
-            best_path = current_path
-            best_perm = perm
-
-    if best_perm is None:
-        best_perm = goals
-
-    best_path.append(goals[-1])  # Adiciona a última posição da permutação
-    return best_path, best_perm
-
-# Função para exibir o caminho detalhado no console
-def print_path_details(path, goals):
-    goal_names = ['A1', 'B2', 'C3']  # Nomes das metas para exibição
-    goal_positions = dict(zip(goal_names, goals))
-
-    for i, goal in enumerate(goal_names):
-        start_index = path.index(goal_positions[goal])
-        end_index = path.index(goal_positions[goal]) + 1
-        segment = path[start_index:end_index]
-        segment_str = "->".join([f"({x},{y})" for (x, y) in segment])
-        print(f"Caminho até {goal}: {segment_str}")
-
-# Exemplo de uso para destinos A1, B2, C3
-start = find_entry(warehouse)
-goals = [(0, 0), (10, 0)]  # Posições de A1, B2, C3
-best_path, best_perm = find_best_route(warehouse, start, goals)
-
-# Verificando se best_perm foi encontrado corretamente
-if best_perm is None:
-    print("Nenhuma permutação válida foi encontrada.")
+if goal_pos is None:
+    print("Destino não encontrado.")
 else:
-    segments = []
-    current_pos = start
-    for goal in best_perm:
-        segment = a_star_search(warehouse, current_pos, goal)
-        segments.append(segment)
-        current_pos = goal
-
-    plot_warehouse(warehouse, segments)
-
-    # Imprimindo o caminho detalhado no console
-    print_path_details(best_path, goals)
+    start = find_entry(warehouse)
+    path, G = a_star_search(warehouse, start, goal_pos)
+    plot_graph(G, path, "grafo.jpg")  # Chama a função para plotar e salvar o grafo
+    plot_warehouse(warehouse, robot_path=path, goal_pos=goal_pos)
