@@ -1,10 +1,14 @@
+import tkinter as tk
+from tkinter import ttk
+from tkinter import messagebox
+from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import numpy as np
 import networkx as nx
 from heapq import heappop, heappush
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.animation import FuncAnimation
-import matplotlib.image as mpimg
-import matplotlib.pyplot as plt
 
 # Definição do galpão
 warehouse = [
@@ -17,10 +21,11 @@ warehouse = [
     ['A4', 'L', 'B4', 'L', 'C4', 'L', 'D4', 'L', 'E4', 'L', 'F4', 'L', 'G4']
 ]
 
-
 # Função para visualizar o galpão
-def plot_warehouse(warehouse, robot_path=None, goal_pos=None):
-    fig, ax = plt.subplots(figsize=(12, 8))
+def plot_warehouse(warehouse, robot_path=None, goal_pos=None, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 8))
+    ax.clear()
     ax.set_xticks(np.arange(len(warehouse[0])) + 0.5, minor=True)
     ax.set_yticks(np.arange(len(warehouse)) + 0.5, minor=True)
     ax.grid(which="minor", color="black", linestyle='-', linewidth=2)
@@ -74,7 +79,7 @@ def plot_warehouse(warehouse, robot_path=None, goal_pos=None):
             img_plot.set_extent([x - 0.5, x + 0.5, y - 0.5, y + 0.5])
             return img_plot,
 
-        anim = FuncAnimation(fig,
+        anim = FuncAnimation(fig1,
                              update,
                              frames=len(robot_path),
                              interval=300,
@@ -88,8 +93,7 @@ def plot_warehouse(warehouse, robot_path=None, goal_pos=None):
                         xytext=(robot_path[i - 1][0], robot_path[i - 1][1]),
                         arrowprops=dict(arrowstyle="->", color="blue", lw=1.5))
 
-    plt.gca().invert_yaxis()
-    plt.show()
+    ax.invert_yaxis()
 
 # Função auxiliar para encontrar vizinhos válidos
 def get_neighbors(pos, warehouse):
@@ -101,11 +105,9 @@ def get_neighbors(pos, warehouse):
             neighbors.append((nx, ny))
     return neighbors
 
-
 # Função de heurística (distância de Manhattan)
 def heuristic(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
-
 
 # Função para encontrar a posição adjacente válida mais próxima
 def find_adjacent_goal(warehouse, goal, entry):
@@ -125,7 +127,7 @@ def find_adjacent_goal(warehouse, goal, entry):
         return closest_target
     else:
         return goal  # Se não houver posição adjacente válida, retorna o próprio objetivo
-        
+
 # Função para encontrar a posição da entrada
 def find_entry(warehouse):
     for y in range(len(warehouse)):
@@ -143,9 +145,11 @@ def find_goal_position(warehouse, goal_label):
     return None
 
 # Função para plotar o grafo do caminho percorrido e salvar como imagem
-def plot_graph(G, path, filename):
+def plot_graph(G, path, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 12))
+    ax.clear()
     pos = {node: (node[1], -node[0]) for node in G.nodes()}  # Inverte as coordenadas x e y
-    fig, ax = plt.subplots(figsize=(8, 12))  # Define a figura com altura maior que a largura
     nx.draw(G,
             pos,
             with_labels=True,
@@ -162,12 +166,12 @@ def plot_graph(G, path, filename):
                            width=2,
                            ax=ax)
     ax.invert_yaxis()  # Inverte o eixo y para desenhar de cima para baixo
-    plt.savefig(filename)
-    plt.close(fig)
 
 # Função para plotar as listas Open e Closed como uma tabela e salvar como imagem
-def plot_lists(open_list, closed_list, filename):
-    fig, ax = plt.subplots(figsize=(12, 4))
+def plot_lists(open_list, closed_list, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 4))
+    ax.clear()
     ax.axis('tight')
     ax.axis('off')
     table_data = []
@@ -177,14 +181,15 @@ def plot_lists(open_list, closed_list, filename):
     # Criar a tabela
     table = ax.table(cellText=table_data, colLabels=['Open List', 'Closed List'], loc='center', cellLoc='center', bbox=[0, 0, 1, 1])
 
-    # Definir o tamanho da fonte manualmente
-    for key, cell in table.get_celld().items():
-        cell.set_fontsize(36)  # Increase the font size to 30
+    # Definir o tamanho da fonte
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)  # Altere o valor para o tamanho desejado
 
-    plt.savefig(filename, dpi=300, bbox_inches='tight', pad_inches=0)  # Remove padding
-    plt.close(fig)
+    # Ajustar o tamanho das colunas
+    table.auto_set_column_width([0, 1])
 
-# Agora, vamos modificar a função a_star_search para coletar os dados das listas Open e Closed
+
+# Função para o algoritmo A*
 def a_star_search(warehouse, start, goal):
     goal = find_adjacent_goal(warehouse, goal, start)
     start, goal = tuple(start), tuple(goal)
@@ -227,20 +232,71 @@ def a_star_search(warehouse, start, goal):
         current = came_from[current]
     path.reverse()
 
-    # Agora, plotamos a tabela com os dados das listas Open e Closed
-    plot_lists(open_list_data, closed_list_data, "listas.jpg")
+    return path, G, open_list_data, closed_list_data
 
-    return path, G
+# Função para atualizar a GUI com os resultados da busca A*
+def run_a_star():
+    goal_label = entry_goal.get().upper()
+    goal_pos = find_goal_position(warehouse, goal_label)
 
-# Chamada da função a_star_search
-goal_label = input(
-    "Digite a casa para a qual deseja ir (por exemplo, A1, B2, etc.): ").upper()
-goal_pos = find_goal_position(warehouse, goal_label)
+    if goal_pos is None:
+        messagebox.showerror("Erro", "Destino não encontrado.")
+        return
 
-if goal_pos is None:
-    print("Destino não encontrado.")
-else:
     start = find_entry(warehouse)
-    path, G = a_star_search(warehouse, start, goal_pos)
-    plot_graph(G, path, "grafo.jpg")  # Chama a função para plotar e salvar o grafo
-    plot_warehouse(warehouse, robot_path=path, goal_pos=goal_pos)
+    path, G, open_list_data, closed_list_data = a_star_search(warehouse, start, goal_pos)
+
+    plot_warehouse(warehouse, robot_path=path, goal_pos=goal_pos, ax=ax1)
+    canvas1.draw()
+
+    plot_graph(G, path, ax=ax2)
+    canvas2.draw()
+
+    plot_lists(open_list_data, closed_list_data, ax=ax3)
+    canvas3.draw()
+
+# Configuração da interface gráfica
+root = tk.Tk()
+root.title("Simulação de Robô no Galpão")
+root.geometry("1600x900")
+
+frame1 = ttk.Frame(root, width=800, height=450)
+frame1.grid(row=0, column=0, sticky='nsew')
+frame2 = ttk.Frame(root, width=800, height=450)
+frame2.grid(row=0, column=1, sticky='nsew')
+frame3 = ttk.Frame(root, width=800, height=450)
+frame3.grid(row=1, column=0, sticky='nsew')
+frame4 = ttk.Frame(root, width=800, height=450)
+frame4.grid(row=1, column=1, sticky='nsew')
+
+root.grid_rowconfigure(0, weight=1)
+root.grid_rowconfigure(1, weight=1)
+root.grid_columnconfigure(0, weight=1)
+root.grid_columnconfigure(1, weight=1)
+
+# Parte superior esquerda: desenho do galpão e caminho do robô
+fig1, ax1 = plt.subplots(figsize=(8, 4))
+canvas1 = FigureCanvasTkAgg(fig1, master=frame1)
+canvas1.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+# Parte superior direita: grafo gerado
+fig2, ax2 = plt.subplots(figsize=(8, 4))
+canvas2 = FigureCanvasTkAgg(fig2, master=frame2)
+canvas2.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+# Parte inferior esquerda: listas Open e Closed
+fig3, ax3 = plt.subplots(figsize=(8, 4))
+canvas3 = FigureCanvasTkAgg(fig3, master=frame3)
+canvas3.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+# Parte inferior direita: pergunta de destino do robô, caixa de texto e botão de envio
+label_goal = ttk.Label(frame4, text="Digite a casa para a qual deseja ir (por exemplo, A1, B1, etc.):")
+label_goal.pack(pady=20)
+
+entry_goal = ttk.Entry(frame4, width=20)
+entry_goal.pack(pady=10)
+
+button_submit = ttk.Button(frame4, text="Enviar", command=run_a_star)
+button_submit.pack(pady=20)
+
+root.mainloop()
