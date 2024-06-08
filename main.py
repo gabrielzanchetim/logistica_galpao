@@ -21,6 +21,7 @@ warehouse = [
     ['A4', 'L', 'B4', 'L', 'C4', 'L', 'D4', 'L', 'E4', 'L', 'F4', 'L', 'G4']
 ]
 
+
 # Função para visualizar o galpão
 def plot_warehouse(warehouse, robot_path=None, goal_pos=None, ax=None):
     if ax is None:
@@ -55,7 +56,8 @@ def plot_warehouse(warehouse, robot_path=None, goal_pos=None, ax=None):
                                   color="green"))
             elif (x, y) == goal_pos:
                 package_img = mpimg.imread("package.png")
-                ax.imshow(package_img, extent=[x - 0.5, x + 0.5, y - 0.5, y + 0.5])
+                ax.imshow(package_img,
+                          extent=[x - 0.5, x + 0.5, y - 0.5, y + 0.5])
             else:
                 ax.text(x,
                         y,
@@ -95,38 +97,49 @@ def plot_warehouse(warehouse, robot_path=None, goal_pos=None, ax=None):
 
     ax.invert_yaxis()
 
+
 # Função auxiliar para encontrar vizinhos válidos
 def get_neighbors(pos, warehouse):
     neighbors = []
     x, y = pos
     for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
         nx, ny = x + dx, y + dy
-        if 0 <= nx < len(warehouse[0]) and 0 <= ny < len(warehouse) and warehouse[ny][nx] not in ['B', 'A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2', 'A3', 'B3', 'C3', 'D3', 'E3', 'F3', 'G3', 'A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4']:
+        if 0 <= nx < len(warehouse[0]) and 0 <= ny < len(
+                warehouse) and warehouse[ny][nx] not in [
+                    'B', 'A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'A2', 'B2',
+                    'C2', 'D2', 'E2', 'F2', 'G2', 'A3', 'B3', 'C3', 'D3', 'E3',
+                    'F3', 'G3', 'A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4'
+                ]:
             neighbors.append((nx, ny))
     return neighbors
+
 
 # Função de heurística (distância de Manhattan)
 def heuristic(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
+
 # Função para encontrar a posição adjacente válida mais próxima
 def find_adjacent_goal(warehouse, goal, entry):
     x, y = goal
-    possible_targets = [(x-1, y), (x, y-1), (x, y+1), (x+1, y)]
+    possible_targets = [(x - 1, y), (x, y - 1), (x, y + 1), (x + 1, y)]
     min_distance = float('inf')
     closest_target = None
 
     for target in possible_targets:
-        if 0 <= target[0] < len(warehouse[0]) and 0 <= target[1] < len(warehouse):
+        if 0 <= target[0] < len(
+                warehouse[0]) and 0 <= target[1] < len(warehouse):
             distance = abs(target[0] - entry[0]) + abs(target[1] - entry[1])
             if distance < min_distance:
                 min_distance = distance
                 closest_target = target
 
-    if closest_target and warehouse[closest_target[1]][closest_target[0]] == 'L':
+    if closest_target and warehouse[closest_target[1]][
+            closest_target[0]] == 'L':
         return closest_target
     else:
         return goal  # Se não houver posição adjacente válida, retorna o próprio objetivo
+
 
 # Função para encontrar a posição da entrada
 def find_entry(warehouse):
@@ -136,6 +149,7 @@ def find_entry(warehouse):
                 return (x, y)
     return None
 
+
 # Função para obter a posição de um objetivo dado seu rótulo
 def find_goal_position(warehouse, goal_label):
     for y in range(len(warehouse)):
@@ -144,12 +158,16 @@ def find_goal_position(warehouse, goal_label):
                 return (x, y)
     return None
 
+
 # Função para plotar o grafo do caminho percorrido e salvar como imagem
 def plot_graph(G, path, ax=None):
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 12))
     ax.clear()
-    pos = {node: (node[1], -node[0]) for node in G.nodes()}  # Inverte as coordenadas x e y
+    pos = {
+        node: (node[1], -node[0])
+        for node in G.nodes()
+    }  # Inverte as coordenadas x e y
     nx.draw(G,
             pos,
             with_labels=True,
@@ -167,6 +185,7 @@ def plot_graph(G, path, ax=None):
                            ax=ax)
     ax.invert_yaxis()  # Inverte o eixo y para desenhar de cima para baixo
 
+
 # Função para plotar as listas Open e Closed como uma tabela e salvar como imagem
 def plot_lists(open_list, closed_list, ax=None):
     if ax is None:
@@ -179,7 +198,11 @@ def plot_lists(open_list, closed_list, ax=None):
         table_data.append([str(open_item), str(closed_item)])
 
     # Criar a tabela
-    table = ax.table(cellText=table_data, colLabels=['Open List', 'Closed List'], loc='center', cellLoc='center', bbox=[0, 0, 1, 1])
+    table = ax.table(cellText=table_data,
+                     colLabels=['Open List', 'Closed List'],
+                     loc='center',
+                     cellLoc='center',
+                     bbox=[0, 0, 1, 1])
 
     # Definir o tamanho da fonte
     table.auto_set_font_size(False)
@@ -234,6 +257,7 @@ def a_star_search(warehouse, start, goal):
 
     return path, G, open_list_data, closed_list_data
 
+
 # Função para atualizar a GUI com os resultados da busca A*
 def run_a_star():
     goal_label = entry_goal.get().upper()
@@ -244,7 +268,8 @@ def run_a_star():
         return
 
     start = find_entry(warehouse)
-    path, G, open_list_data, closed_list_data = a_star_search(warehouse, start, goal_pos)
+    path, G, open_list_data, closed_list_data = a_star_search(
+        warehouse, start, goal_pos)
 
     plot_warehouse(warehouse, robot_path=path, goal_pos=goal_pos, ax=ax1)
     canvas1.draw()
@@ -254,6 +279,7 @@ def run_a_star():
 
     plot_lists(open_list_data, closed_list_data, ax=ax3)
     canvas3.draw()
+
 
 # Configuração da interface gráfica
 root = tk.Tk()
@@ -290,7 +316,9 @@ canvas3 = FigureCanvasTkAgg(fig3, master=frame3)
 canvas3.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
 # Parte inferior direita: pergunta de destino do robô, caixa de texto e botão de envio
-label_goal = ttk.Label(frame4, text="Digite a casa para a qual deseja ir (por exemplo, A1, B1, etc.):")
+label_goal = ttk.Label(
+    frame4,
+    text="Digite a casa para a qual deseja ir (por exemplo, A1, B1, etc.):")
 label_goal.pack(pady=20)
 
 entry_goal = ttk.Entry(frame4, width=20)
