@@ -1,330 +1,313 @@
-import tkinter as tk
-from tkinter import ttk
-from tkinter import messagebox
-from PIL import Image, ImageTk
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-import numpy as np
 import networkx as nx
-from heapq import heappop, heappush
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.animation import FuncAnimation
-
-# Definição do galpão
-warehouse = [
-    ['A1', 'L', 'B1', 'L', 'C1', 'L', 'D1', 'L', 'E1', 'L', 'F1', 'L', 'G1'],
-    ['L', 'L', 'B', 'L', 'B', 'L', 'L', 'L', 'L', 'L', 'L', 'B', 'L'],
-    ['A2', 'L', 'B2', 'B', 'C2', 'L', 'D2', 'B', 'E2', 'L', 'F2', 'L', 'G2'],
-    ['L', 'L', 'L', 'L', 'L', 'L', 'L', 'L', 'L', 'L', 'L', 'L', 'E'],
-    ['A3', 'L', 'B3', 'B', 'C3', 'L', 'D3', 'B', 'E3', 'L', 'F3', 'L', 'G3'],
-    ['L', 'L', 'B', 'L', 'B', 'L', 'L', 'L', 'L', 'L', 'B', 'L', 'L'],
-    ['A4', 'L', 'B4', 'L', 'C4', 'L', 'D4', 'L', 'E4', 'L', 'F4', 'L', 'G4']
-]
+import numpy as np
+import tkinter as tk
+from queue import PriorityQueue
+from tkinter import ttk
 
 
-# Função para visualizar o galpão
-def plot_warehouse(warehouse, robot_path=None, goal_pos=None, ax=None):
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(12, 8))
-    ax.clear()
-    ax.set_xticks(np.arange(len(warehouse[0])) + 0.5, minor=True)
-    ax.set_yticks(np.arange(len(warehouse)) + 0.5, minor=True)
-    ax.grid(which="minor", color="black", linestyle='-', linewidth=2)
-    ax.tick_params(which="minor", size=0)
+def criar_galpao(linhas, colunas, prateleiras_linhas, prateleiras_colunas):
+    galpao = np.zeros((linhas, colunas), dtype=int)
 
-    ax.set_xlim(-0.5, len(warehouse[0]) - 0.5)
-    ax.set_ylim(-0.5, len(warehouse) - 0.5)
+    for linha in prateleiras_linhas:
+        for coluna in prateleiras_colunas:
+            if coluna < colunas:
+                galpao[linha, coluna] = 1  # 1 representa uma prateleira
 
-    for y in range(len(warehouse)):
-        for x in range(len(warehouse[0])):
-            element = warehouse[y][x]
-            if element == 'L':
-                ax.text(x, y, element, ha='center', va='center', fontsize=12)
-            elif element == 'B':
-                ax.add_patch(
-                    plt.Rectangle((x - 0.5, y - 0.5),
-                                  1,
-                                  1,
-                                  fill=True,
-                                  color="black"))
-            elif element == 'E':
-                ax.add_patch(
-                    plt.Rectangle((x - 0.5, y - 0.5),
-                                  1,
-                                  1,
-                                  fill=True,
-                                  color="green"))
-            elif (x, y) == goal_pos:
-                package_img = mpimg.imread("package.png")
-                ax.imshow(package_img,
-                          extent=[x - 0.5, x + 0.5, y - 0.5, y + 0.5])
-            else:
-                ax.text(x,
-                        y,
-                        element,
-                        ha='center',
-                        va='center',
-                        fontsize=12,
-                        color='red')
+    galpao[3, 12] = 2  # 2 representa um robô
 
-    if robot_path:
-        robo_img = mpimg.imread("robo.png")
-        img_plot = ax.imshow(robo_img,
-                             extent=[
-                                 robot_path[0][0] - 0.5,
-                                 robot_path[0][0] + 0.5,
-                                 robot_path[0][1] - 0.5, robot_path[0][1] + 0.5
-                             ])
+    paredes = [(1, 2), (1, 4), (1, 10), (2, 3), (2, 7), (4, 3), (4, 7), (5, 2),
+               (5, 4), (5, 10)]
 
-        def update(frame):
-            x, y = robot_path[frame]
-            img_plot.set_extent([x - 0.5, x + 0.5, y - 0.5, y + 0.5])
-            return img_plot,
+    for parede in paredes:
+        galpao[parede] = 3  # 3 representa uma parede
 
-        anim = FuncAnimation(fig1,
-                             update,
-                             frames=len(robot_path),
-                             interval=300,
-                             blit=True,
-                             repeat=False)
-
-        # Adiciona uma seta ao caminho percorrido
-        for i in range(1, len(robot_path)):
-            ax.annotate("",
-                        xy=(robot_path[i][0], robot_path[i][1]),
-                        xytext=(robot_path[i - 1][0], robot_path[i - 1][1]),
-                        arrowprops=dict(arrowstyle="->", color="blue", lw=1.5))
-
-    ax.invert_yaxis()
+    return galpao
 
 
-# Função auxiliar para encontrar vizinhos válidos
-def get_neighbors(pos, warehouse):
-    neighbors = []
-    x, y = pos
-    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-        nx, ny = x + dx, y + dy
-        if 0 <= nx < len(warehouse[0]) and 0 <= ny < len(
-                warehouse) and warehouse[ny][nx] not in [
-                    'B', 'A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'A2', 'B2',
-                    'C2', 'D2', 'E2', 'F2', 'G2', 'A3', 'B3', 'C3', 'D3', 'E3',
-                    'F3', 'G3', 'A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4'
-                ]:
-            neighbors.append((nx, ny))
-    return neighbors
+def plotar_galpao(ax, galpao, labels, caminho=[]):
+    cmap = mcolors.ListedColormap(['white', 'blue', 'green', 'black'])
+    bounds = [0, 1, 2, 3, 4]
+    norm = mcolors.BoundaryNorm(bounds, cmap.N)
+
+    ax.imshow(galpao, cmap=cmap, norm=norm, interpolation='none')
+
+    ax.set_xticks(np.arange(-.5, galpao.shape[1], 1), minor=True)
+    ax.set_yticks(np.arange(-.5, galpao.shape[0], 1), minor=True)
+    ax.grid(which='minor', color='black', linestyle='-', linewidth=2)
+
+    ax.tick_params(which='both',
+                   bottom=False,
+                   left=False,
+                   labelbottom=False,
+                   labelleft=False)
+    ax.set_title('Grid do Galpão')
+
+    for (i, j), label in labels.items():
+        ax.text(j, i, label, ha='center', va='center', color='black')
+
+    # Plotar o caminho encontrado
+    for (i, j) in caminho:
+        ax.add_patch(
+            plt.Rectangle((j - 0.5, i - 0.5),
+                          1,
+                          1,
+                          fill=None,
+                          edgecolor='red',
+                          linewidth=2))
 
 
-# Função de heurística (distância de Manhattan)
-def heuristic(a, b):
-    return abs(a[0] - b[0]) + abs(a[1] - b[1])
-
-
-# Função para encontrar a posição adjacente válida mais próxima
-def find_adjacent_goal(warehouse, goal, entry):
-    x, y = goal
-    possible_targets = [(x - 1, y), (x, y - 1), (x, y + 1), (x + 1, y)]
-    min_distance = float('inf')
-    closest_target = None
-
-    for target in possible_targets:
-        if 0 <= target[0] < len(
-                warehouse[0]) and 0 <= target[1] < len(warehouse):
-            distance = abs(target[0] - entry[0]) + abs(target[1] - entry[1])
-            if distance < min_distance:
-                min_distance = distance
-                closest_target = target
-
-    if closest_target and warehouse[closest_target[1]][
-            closest_target[0]] == 'L':
-        return closest_target
-    else:
-        return goal  # Se não houver posição adjacente válida, retorna o próprio objetivo
-
-
-# Função para encontrar a posição da entrada
-def find_entry(warehouse):
-    for y in range(len(warehouse)):
-        for x in range(len(warehouse[0])):
-            if warehouse[y][x] == 'E':
-                return (x, y)
-    return None
-
-
-# Função para obter a posição de um objetivo dado seu rótulo
-def find_goal_position(warehouse, goal_label):
-    for y in range(len(warehouse)):
-        for x in range(len(warehouse[0])):
-            if warehouse[y][x] == goal_label:
-                return (x, y)
-    return None
-
-
-# Função para plotar o grafo do caminho percorrido e salvar como imagem
-def plot_graph(G, path, ax=None):
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(8, 12))
-    ax.clear()
-    pos = {
-        node: (node[1], -node[0])
-        for node in G.nodes()
-    }  # Inverte as coordenadas x e y
-    nx.draw(G,
-            pos,
-            with_labels=True,
-            node_size=500,
-            node_color='lightblue',
-            font_size=10,
-            font_weight='bold',
-            ax=ax)
-    path_edges = list(zip(path, path[1:]))
-    nx.draw_networkx_edges(G,
-                           pos,
-                           edgelist=path_edges,
-                           edge_color='r',
-                           width=2,
-                           ax=ax)
-    ax.invert_yaxis()  # Inverte o eixo y para desenhar de cima para baixo
-
-
-# Função para plotar as listas Open e Closed como uma tabela e salvar como imagem
-def plot_lists(open_list, closed_list, ax=None):
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(12, 4))
-    ax.clear()
-    ax.axis('tight')
-    ax.axis('off')
-    table_data = []
-    for open_item, closed_item in zip(open_list, closed_list):
-        table_data.append([str(open_item), str(closed_item)])
-
-    # Criar a tabela
-    table = ax.table(cellText=table_data,
-                     colLabels=['Open List', 'Closed List'],
-                     loc='center',
-                     cellLoc='center',
-                     bbox=[0, 0, 1, 1])
-
-    # Definir o tamanho da fonte
-    table.auto_set_font_size(False)
-    table.set_fontsize(8)  # Altere o valor para o tamanho desejado
-
-    # Ajustar o tamanho das colunas
-    table.auto_set_column_width([0, 1])
-
-
-# Função para o algoritmo A*
-def a_star_search(warehouse, start, goal):
-    goal = find_adjacent_goal(warehouse, goal, start)
-    start, goal = tuple(start), tuple(goal)
-    open_list = []
-    heappush(open_list, (0, start))
-    came_from = {start: None}
-    cost_so_far = {start: 0}
-
-    closed_list = set()  # Conjunto para armazenar os nós fechados
-
-    open_list_data = [open_list.copy()]
-    closed_list_data = [closed_list.copy()]
-
-    # Grafo para visualizar o caminho percorrido
+def criar_grafo(galpao, labels):
+    linhas, colunas = galpao.shape
     G = nx.Graph()
 
-    while open_list:
-        _, current = heappop(open_list)
-        closed_list.add(current)  # Adiciona o nó atual à lista fechada
+    for linha in range(linhas):
+        for coluna in range(colunas):
+            if galpao[linha, coluna] in [0, 2]:
+                G.add_node(labels[(linha, coluna)])
+
+                if linha > 0 and galpao[linha - 1, coluna] in [0, 2]:
+                    G.add_edge(labels[(linha, coluna)],
+                               labels[(linha - 1, coluna)])
+                if linha < linhas - 1 and galpao[linha + 1, coluna] in [0, 2]:
+                    G.add_edge(labels[(linha, coluna)],
+                               labels[(linha + 1, coluna)])
+                if coluna > 0 and galpao[linha, coluna - 1] in [0, 2]:
+                    G.add_edge(labels[(linha, coluna)],
+                               labels[(linha, coluna - 1)])
+                if coluna < colunas - 1 and galpao[linha,
+                                                   coluna + 1] in [0, 2]:
+                    G.add_edge(labels[(linha, coluna)],
+                               labels[(linha, coluna + 1)])
+
+    return G
+
+
+def plotar_grafo(ax, G, pos, caminho=[]):
+    nx.draw(G,
+            pos,
+            ax=ax,
+            with_labels=True,
+            node_size=300,
+            node_color='lightblue',
+            font_size=8,
+            font_weight='bold')
+    ax.set_title('Grafo dos Caminhos')
+
+    # Plotar o caminho encontrado
+    if caminho:
+        edges = [(caminho[i], caminho[i + 1]) for i in range(len(caminho) - 2)]
+        nx.draw_networkx_edges(G,
+                               pos,
+                               edgelist=edges,
+                               ax=ax,
+                               edge_color='red',
+                               width=2)
+
+
+def heuristica_manhattan(a, b):
+    if heuristica_nao_admissivel.get():
+        return (abs(a[0] - b[0]) + abs(a[1] - b[1])) * 2
+    else:
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def a_star(galpao, start, goal):
+    linhas, colunas = galpao.shape
+    start = (start[0], start[1])
+    goal = (goal[0], goal[1])
+
+    open_set = PriorityQueue()
+    open_set.put((0, start))
+
+    came_from = {}
+    g_score = {start: 0}
+    f_score = {start: heuristica_manhattan(start, goal)}
+
+    open_list = [start]
+    closed_list = []
+
+    # Registrar os estados das listas de nós abertos e fechados
+    steps = [([], open_list.copy())]
+
+    while not open_set.empty():
+        current = open_set.get()[1]
+        open_list.remove(current)
+        closed_list.append(current)
 
         if current == goal:
+            caminho = []
+            while current in came_from:
+                caminho.append(current)
+                current = came_from[current]
+            caminho.append(start)
+            return caminho[::-1], steps
+
+        for d in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            neighbor = (current[0] + d[0], current[1] + d[1])
+            if 0 <= neighbor[0] < linhas and 0 <= neighbor[
+                    1] < colunas and galpao[neighbor] != 3:
+                # Verificar se o vizinho é uma prateleira e se está bloqueando o caminho
+                if galpao[neighbor] == 1 and neighbor != goal:
+                    continue
+
+                temp_g_score = g_score[current] + 1
+
+                if neighbor not in g_score or temp_g_score < g_score[neighbor]:
+                    came_from[neighbor] = current
+                    g_score[neighbor] = temp_g_score
+                    f_score[neighbor] = temp_g_score + heuristica_manhattan(
+                        neighbor, goal)
+                    if neighbor not in open_list:
+                        open_set.put((f_score[neighbor], neighbor))
+                        open_list.append(neighbor)
+
+        # Registrar o estado atual das listas cumulativas
+        steps.append((closed_list.copy(), open_list.copy()))
+
+    return None, steps
+
+
+def ir_para_destino():
+    destino = combo_destinos.get()
+    print("Destino selecionado:", destino)
+
+    destino_coords = None
+    for (i, j), label in labels.items():
+        if label == destino:
+            destino_coords = (i, j)
+            print("Coord. destino selecionado:", destino_coords)
             break
 
-        for neighbor in get_neighbors(current, warehouse):
-            new_cost = cost_so_far[current] + 1
-            if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
-                cost_so_far[neighbor] = new_cost
-                priority = new_cost + heuristic(goal, neighbor)
-                heappush(open_list, (priority, neighbor))
-                came_from[neighbor] = current
-                G.add_edge(current, neighbor)  # Adiciona aresta ao grafo
+    start_coords = (3, 12)
+    caminho, steps = a_star(galpao, start_coords, destino_coords)
 
-        open_list_data.append(open_list.copy())
-        closed_list_data.append(closed_list.copy())
+    if caminho:
+        print("Caminho encontrado:", caminho)
+        fig, ((ax1, ax3), (ax2, ax4)) = plt.subplots(2, 2, figsize=(12, 6))
+        plotar_galpao(ax1, galpao, labels, caminho)
+        plotar_grafo(ax2, grafo, pos, [labels[(i, j)] for (i, j) in caminho])
 
-    path = []
-    current = goal
-    while current:
-        path.append(current)
-        current = came_from[current]
-    path.reverse()
+        # Criar a tabela de nós abertos e fechados ao longo dos passos
+        tabela_data = []
+        for closed, open_ in steps:
+            open_labels = [labels[n] for n in open_]
+            closed_labels = [labels[n] for n in closed]
 
-    return path, G, open_list_data, closed_list_data
+            # Remover duplicatas e ordenar as labels
+            open_labels = sorted(set(open_labels), key=open_labels.index)
+            closed_labels = sorted(set(closed_labels), key=closed_labels.index)
+
+            # Formatando as strings sem vírgulas extras
+            open_str = ', '.join(open_labels) if open_labels else '-'
+            closed_str = ', '.join(closed_labels) if closed_labels else '-'
+
+            tabela_data.append((open_str, closed_str))
+
+        tabela = ax3.table(cellText=tabela_data,
+                           colLabels=['Nós Abertos', 'Nós Fechados'],
+                           cellLoc='center',
+                           loc='center')
+        tabela.auto_set_font_size(False)
+        tabela.set_fontsize(10)
+
+        # Ajustar a posição da tabela para criar uma margem com o título
+        tabela.auto_set_column_width(
+            col=list(range(len(['Nós Abertos', 'Nós Fechados']))))
+        tabela.scale(
+            0.8, 1.2
+        )  # Ajuste a largura e a altura da tabela novamente, se necessário
+
+        ax3.axis('off')
+        ax3.set_title('Listas de Nós Abertos e Fechados',
+                      pad=20)  # Adicionar margem com pad
+
+        # Deixar o quarto subplot vazio
+        ax4.axis('off')
+
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("Nenhum caminho encontrado.")
 
 
-# Função para atualizar a GUI com os resultados da busca A*
-def run_a_star():
-    goal_label = entry_goal.get().upper()
-    goal_pos = find_goal_position(warehouse, goal_label)
+# Configurações do galpão
+linhas = 7
+colunas = 13
 
-    if goal_pos is None:
-        messagebox.showerror("Erro", "Destino não encontrado.")
-        return
+# Posicionar as prateleiras
+prateleiras_linhas = [0, 2, 4, 6]
+prateleiras_colunas = [0, 2, 4, 6, 8, 10, 12]
 
-    start = find_entry(warehouse)
-    path, G, open_list_data, closed_list_data = a_star_search(
-        warehouse, start, goal_pos)
+# Criar o galpão
+galpao = criar_galpao(linhas, colunas, prateleiras_linhas, prateleiras_colunas)
 
-    plot_warehouse(warehouse, robot_path=path, goal_pos=goal_pos, ax=ax1)
-    canvas1.draw()
+# Criar labels para cada posição
+labels = {
+    (i, j): f'P{i * colunas + j}'
+    for i in range(linhas)
+    for j in range(colunas)
+}
 
-    plot_graph(G, path, ax=ax2)
-    canvas2.draw()
+# Mapear as siglas de volta para coordenadas para o plot do grafo
+pos = {labels[(i, j)]: (j, -i) for i in range(linhas) for j in range(colunas)}
 
-    plot_lists(open_list_data, closed_list_data, ax=ax3)
-    canvas3.draw()
+# Criar o grafo dos caminhos possíveis
+grafo = criar_grafo(galpao, labels)
 
-
-# Configuração da interface gráfica
+# Criar a janela principal
 root = tk.Tk()
-root.title("Simulação de Robô no Galpão")
-root.geometry("1600x900")
+root.title("Seleção de Destino")
 
-frame1 = ttk.Frame(root, width=800, height=450)
-frame1.grid(row=0, column=0, sticky='nsew')
-frame2 = ttk.Frame(root, width=800, height=450)
-frame2.grid(row=0, column=1, sticky='nsew')
-frame3 = ttk.Frame(root, width=800, height=450)
-frame3.grid(row=1, column=0, sticky='nsew')
-frame4 = ttk.Frame(root, width=800, height=450)
-frame4.grid(row=1, column=1, sticky='nsew')
+# Criar a lista de prateleiras como opções
+prateleiras = [(linha, coluna) for linha in prateleiras_linhas
+               for coluna in prateleiras_colunas]
 
-root.grid_rowconfigure(0, weight=1)
-root.grid_rowconfigure(1, weight=1)
-root.grid_columnconfigure(0, weight=1)
-root.grid_columnconfigure(1, weight=1)
+# Mapear as prateleiras para suas siglas correspondentes
+prateleiras_labels = {
+    prateleira: f'P{prateleira[0] * colunas + prateleira[1]}'
+    for prateleira in prateleiras
+}
 
-# Parte superior esquerda: desenho do galpão e caminho do robô
-fig1, ax1 = plt.subplots(figsize=(8, 4))
-canvas1 = FigureCanvasTkAgg(fig1, master=frame1)
-canvas1.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+# Criar a combobox com as opções das prateleiras
+combo_destinos = ttk.Combobox(root,
+                              values=list(prateleiras_labels.values()),
+                              state="readonly")
+combo_destinos.pack(pady=10)
 
-# Parte superior direita: grafo gerado
-fig2, ax2 = plt.subplots(figsize=(8, 4))
-canvas2 = FigureCanvasTkAgg(fig2, master=frame2)
-canvas2.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+# Criar e posicionar a checkbox para ativar/desativar a exibição do caminho
+heuristica_nao_admissivel = tk.BooleanVar()
+chk_exibir_caminho = ttk.Checkbutton(root,
+                                     text="Heurística Não Admissível",
+                                     variable=heuristica_nao_admissivel)
+chk_exibir_caminho.pack(pady=5)
 
-# Parte inferior esquerda: listas Open e Closed
-fig3, ax3 = plt.subplots(figsize=(8, 4))
-canvas3 = FigureCanvasTkAgg(fig3, master=frame3)
-canvas3.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+# Criar e posicionar o botão para confirmar o destino
+btn_confirmar = ttk.Button(root,
+                           text="Confirmar Destino",
+                           command=ir_para_destino)
+btn_confirmar.pack(pady=5)
 
-# Parte inferior direita: pergunta de destino do robô, caixa de texto e botão de envio
-label_goal = ttk.Label(
-    frame4,
-    text="Digite a casa para a qual deseja ir (por exemplo, A1, B1, etc.):")
-label_goal.pack(pady=20)
+# Criar uma figura com quatro subplots (2x2)
+fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 6))
 
-entry_goal = ttk.Entry(frame4, width=20)
-entry_goal.pack(pady=10)
+# Plotar o grid do galpão no primeiro subplot
+plotar_galpao(ax1, galpao, labels)
 
-button_submit = ttk.Button(frame4, text="Enviar", command=run_a_star)
-button_submit.pack(pady=20)
+# Plotar o grafo dos caminhos possíveis no segundo subplot
+plotar_grafo(ax3, grafo, pos)
 
+# Configurar o terceiro subplot para a tabela de nós abertos e fechados
+ax2.axis('off')
+ax2.set_title('Listas de Nós Abertos e Fechados')
+
+# Deixar o quarto subplot vazio
+ax4.axis('off')
+
+# Mostrar a figura
+plt.tight_layout()
+plt.show()
+
+# Iniciar o loop da aplicação
 root.mainloop()
